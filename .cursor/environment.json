@@ -1,4 +1,4 @@
 {
   "name": "Connex",
-  "install": "./.cursor/install.sh"
+  "install": "if [ -f .cursor/install.sh ]; then bash .cursor/install.sh; else bash repos/connex/.cursor/install.sh; fi"
 }
