@@ -2,7 +2,7 @@ import { Net } from './interfaces'
 import { PromInt, InterruptedError } from './promint'
 import { Cache } from './cache'
 import { blake2b256 } from 'thor-devkit'
-import { sleep } from './common'
+import { sleep, toHead } from './common'
 
 /** class implements Connex.Driver leaves out Vendor related methods */
 export class DriverNoVendor implements Connex.Driver {
@@ -19,18 +19,7 @@ export class DriverNoVendor implements Connex.Driver {
         readonly genesis: Connex.Thor.Block,
         initialHead?: Connex.Thor.Status['head']
     ) {
-        if (initialHead) {
-            this.head = initialHead
-        } else {
-            this.head = {
-                id: genesis.id,
-                number: genesis.number,
-                timestamp: genesis.timestamp,
-                parentID: genesis.parentID,
-                txsFeatures: genesis.txsFeatures,
-                gasLimit: genesis.gasLimit
-            }
-        }
+        this.head = initialHead ?? toHead(genesis)
         void this.headTrackerLoop()
     }
 
@@ -166,14 +155,7 @@ export class DriverNoVendor implements Connex.Driver {
             try {
                 const best = await this.int.wrap<Connex.Thor.Block>(this.httpGet('blocks/best'))
                 if (best.id !== this.head.id && best.number >= this.head.number) {
-                    this.head = {
-                        id: best.id,
-                        number: best.number,
-                        timestamp: best.timestamp,
-                        parentID: best.parentID,
-                        txsFeatures: best.txsFeatures,
-                        gasLimit: best.gasLimit
-                    }
+                    this.head = toHead(best)
                     this.cache.handleNewBlock(this.head, undefined, best)
                     this.emitNewHead()
 
@@ -216,14 +198,7 @@ export class DriverNoVendor implements Connex.Driver {
                 const data = await this.int.wrap(wsr.read())
                 const beat: Beat2 = JSON.parse(data)
                 if (!beat.obsolete && beat.id !== this.head.id && beat.number >= this.head.number) {
-                    this.head = {
-                        id: beat.id,
-                        number: beat.number,
-                        timestamp: beat.timestamp,
-                        parentID: beat.parentID,
-                        txsFeatures: beat.txsFeatures,
-                        gasLimit: beat.gasLimit
-                    }
+                    this.head = toHead(beat)
                     this.cache.handleNewBlock(this.head, { k: beat.k, bits: beat.bloom })
                     this.emitNewHead()
                 }
