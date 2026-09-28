@@ -20,78 +20,56 @@ export function newDriverGuard(
         return obj
     }
 
+    // Forward every argument. Naming parameters here dropped later additions
+    // such as cacheHints on explain and the log filters.
+    const forward = <A extends unknown[], T>(
+        invoke: (...args: A) => Promise<T>,
+        scheme: V.Scheme<T>,
+        path: string
+    ) => (...args: A): Promise<T> => invoke(...args).then(value => test(value, scheme, path))
+
+    const forwardNullable = <A extends unknown[], T>(
+        invoke: (...args: A) => Promise<T | null>,
+        scheme: V.Scheme<T>,
+        path: string
+    ) => (...args: A): Promise<T | null> => invoke(...args).then(value => value ? test(value, scheme, path) : value)
+
     const genesis = test(driver.genesis, blockScheme, 'genesis')
     return {
         genesis,
         get head() {
             return test(driver.head, headScheme, 'head')
         },
-        pollHead() {
-            return driver.pollHead()
-                .then(h => test(h, headScheme, 'getHead()'))
-        },
-        getBlock(revision) {
-            return driver.getBlock(revision)
-                .then(b => b ? test(b, blockScheme, 'getBlock()') : b)
-        },
-        getTransaction(id, allowPending) {
-            return driver.getTransaction(id, allowPending)
-                .then(tx => tx ? test(tx, txScheme, 'getTransaction()') : tx)
-        },
-        getReceipt(id) {
-            return driver.getReceipt(id)
-                .then(r => r ? test(r, receiptScheme, 'getReceipt()') : r)
-        },
-        getAccount(addr: string, revision: string) {
-            return driver.getAccount(addr, revision)
-                .then(a => test(a, {
-                    balance: R.hexString,
-                    energy: R.hexString,
-                    hasCode: R.bool
-                }, 'getAccount()'))
-        },
-        getCode(addr: string, revision: string) {
-            return driver.getCode(addr, revision)
-                .then(c => test(c, {
-                    code: R.bytes
-                }, 'getCode()'))
-        },
-        getStorage(addr: string, key: string, revision: string) {
-            return driver.getStorage(addr, key, revision)
-                .then(s => test(s, {
-                    value: R.bytes32
-                }, 'getStorage()'))
-        },
-        explain(arg, revision) {
-            return driver.explain(arg, revision)
-                .then(r => test(r, [vmOutputScheme], 'explain()'))
-        },
-        filterEventLogs(arg) {
-            return driver.filterEventLogs(arg)
-                .then(r => test(r, [eventWithMetaScheme], 'filterEventLogs()'))
-        },
-        filterTransferLogs(arg) {
-            return driver.filterTransferLogs(arg)
-                .then(r => test(r, [transferWithMetaScheme], 'filterTransferLogs()'))
-        },
-        signTx(msg, options) {
-            return driver.signTx(msg, options)
-                .then(r => test(r, {
-                    txid: R.bytes32,
-                    signer: R.address
-                }, 'signTx()'))
-        },
-        signCert(msg, options) {
-            return driver.signCert(msg, options)
-                .then(r => test(r, {
-                    annex: {
-                        domain: R.string,
-                        timestamp: R.uint64,
-                        signer: R.address
-                    },
-                    signature: v => R.isHexBytes(v, 65) ? '' : 'expected 65 bytes'
-                }, 'signCert()'))
-        }
+        pollHead: forward((...args) => driver.pollHead(...args), headScheme, 'getHead()'),
+        getBlock: forwardNullable((...args) => driver.getBlock(...args), blockScheme, 'getBlock()'),
+        getTransaction: forwardNullable((...args) => driver.getTransaction(...args), txScheme, 'getTransaction()'),
+        getReceipt: forwardNullable((...args) => driver.getReceipt(...args), receiptScheme, 'getReceipt()'),
+        getAccount: forward((...args) => driver.getAccount(...args), {
+            balance: R.hexString,
+            energy: R.hexString,
+            hasCode: R.bool
+        }, 'getAccount()'),
+        getCode: forward((...args) => driver.getCode(...args), {
+            code: R.bytes
+        }, 'getCode()'),
+        getStorage: forward((...args) => driver.getStorage(...args), {
+            value: R.bytes32
+        }, 'getStorage()'),
+        explain: forward((...args) => driver.explain(...args), [vmOutputScheme], 'explain()'),
+        filterEventLogs: forward((...args) => driver.filterEventLogs(...args), [eventWithMetaScheme], 'filterEventLogs()'),
+        filterTransferLogs: forward((...args) => driver.filterTransferLogs(...args), [transferWithMetaScheme], 'filterTransferLogs()'),
+        signTx: forward((...args) => driver.signTx(...args), {
+            txid: R.bytes32,
+            signer: R.address
+        }, 'signTx()'),
+        signCert: forward((...args) => driver.signCert(...args), {
+            annex: {
+                domain: R.string,
+                timestamp: R.uint64,
+                signer: R.address
+            },
+            signature: v => R.isHexBytes(v, 65) ? '' : 'expected 65 bytes'
+        }, 'signCert()')
     }
 }
 
@@ -205,14 +183,6 @@ const vmOutputScheme: V.Scheme<Connex.VM.Output> = {
     gasUsed: R.uint64,
     reverted: R.bool,
     revertReason: () => '',
-    events: [{
-        address: R.address,
-        topics: [R.bytes32],
-        data: R.bytes,
-    }],
-    transfers: [{
-        sender: R.address,
-        recipient: R.address,
-        amount: R.hexString,
-    }]
+    events: [eventScheme],
+    transfers: [transferScheme]
 }
