@@ -24,42 +24,42 @@ export class LazyDriver implements Connex.Driver {
     get head(): Connex.Thor.Status['head'] {
         return this.noVendor.head
     }
-    pollHead(): Promise<Connex.Thor.Status['head']> { 
-        return this.noVendor.pollHead()
-     }
-    getBlock(revision: string | number): Promise<Connex.Thor.Block | null> {
-        return this.noVendor.getBlock(revision)
+    pollHead(...args: Parameters<Connex.Driver['pollHead']>): ReturnType<Connex.Driver['pollHead']> {
+        return this.noVendor.pollHead(...args)
     }
-    getTransaction(id: string, allowPending: boolean): Promise<Connex.Thor.Transaction | null> { 
-        return this.noVendor.getTransaction(id, allowPending)
-     }
-    getReceipt(id: string): Promise<Connex.Thor.Transaction.Receipt | null> { 
-        return this.noVendor.getReceipt(id)
-     }
-    getAccount(addr: string, revision: string): Promise<Connex.Thor.Account> { 
-        return this.noVendor.getAccount(addr, revision)
-     }
-    getCode(addr: string, revision: string): Promise<Connex.Thor.Account.Code> {
-        return this.noVendor.getCode(addr, revision)
+    getBlock(...args: Parameters<Connex.Driver['getBlock']>): ReturnType<Connex.Driver['getBlock']> {
+        return this.noVendor.getBlock(...args)
     }
-    getStorage(addr: string, key: string, revision: string): Promise<Connex.Thor.Account.Storage> { 
-        return this.noVendor.getStorage(addr, key, revision)
-     }
-    explain(arg: Connex.Driver.ExplainArg, revision: string, cacheHints?: string[]): Promise<Connex.VM.Output[]> { 
-        return this.noVendor.explain(arg, revision, cacheHints)
-     }
-    filterEventLogs(arg: Connex.Driver.FilterEventLogsArg): Promise<Connex.Thor.Filter.Row<'event'>[]> { 
-        return this.noVendor.filterEventLogs(arg)
-     }
-    filterTransferLogs(arg: Connex.Driver.FilterTransferLogsArg): Promise<Connex.Thor.Filter.Row<'transfer'>[]> { 
-        return this.noVendor.filterTransferLogs(arg)
-     }
+    getTransaction(...args: Parameters<Connex.Driver['getTransaction']>): ReturnType<Connex.Driver['getTransaction']> {
+        return this.noVendor.getTransaction(...args)
+    }
+    getReceipt(...args: Parameters<Connex.Driver['getReceipt']>): ReturnType<Connex.Driver['getReceipt']> {
+        return this.noVendor.getReceipt(...args)
+    }
+    getAccount(...args: Parameters<Connex.Driver['getAccount']>): ReturnType<Connex.Driver['getAccount']> {
+        return this.noVendor.getAccount(...args)
+    }
+    getCode(...args: Parameters<Connex.Driver['getCode']>): ReturnType<Connex.Driver['getCode']> {
+        return this.noVendor.getCode(...args)
+    }
+    getStorage(...args: Parameters<Connex.Driver['getStorage']>): ReturnType<Connex.Driver['getStorage']> {
+        return this.noVendor.getStorage(...args)
+    }
+    explain(...args: Parameters<Connex.Driver['explain']>): ReturnType<Connex.Driver['explain']> {
+        return this.noVendor.explain(...args)
+    }
+    filterEventLogs(...args: Parameters<Connex.Driver['filterEventLogs']>): ReturnType<Connex.Driver['filterEventLogs']> {
+        return this.noVendor.filterEventLogs(...args)
+    }
+    filterTransferLogs(...args: Parameters<Connex.Driver['filterTransferLogs']>): ReturnType<Connex.Driver['filterTransferLogs']> {
+        return this.noVendor.filterTransferLogs(...args)
+    }
 
-    async signTx(msg: Connex.Vendor.TxMessage, options: Connex.Signer.TxOptions): Promise<Connex.Vendor.TxResponse> {
-        return this.signer.then(b => b.signTx(msg, options))
+    signTx(...args: Parameters<Connex.Signer['signTx']>): ReturnType<Connex.Signer['signTx']> {
+        return this.signer.then(signer => signer.signTx(...args))
     }
-    async signCert(msg: Connex.Vendor.CertMessage, options: Connex.Signer.CertOptions): Promise<Connex.Vendor.CertResponse> {
-        return this.signer.then(b => b.signCert(msg, options))
+    signCert(...args: Parameters<Connex.Signer['signCert']>): ReturnType<Connex.Signer['signCert']> {
+        return this.signer.then(signer => signer.signCert(...args))
     }
 }
 

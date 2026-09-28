@@ -19,40 +19,45 @@ export const createSync2: NewSignerFunc = async (genesisId:string) => {
     ))
 }
 
+function applyTxOptions(service: Connex1.Vendor.TxSigningService, options: Connex.Signer.TxOptions): void {
+    options.signer && service.signer(options.signer)
+    options.gas && service.gas(options.gas)
+    options.dependsOn && service.dependsOn(options.dependsOn)
+    options.link && service.link(options.link)
+    options.comment && service.comment(options.comment)
+    if (options.delegator) {
+        const url = options.delegator.url
+        service.delegate(async (unsignedTx) => {
+            const res = await fetch(url, {
+                method: 'POST',
+                body: JSON.stringify(unsignedTx),
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            return res.json()
+        })
+    }
+    options.onAccepted && options.onAccepted()
+}
+
+function applyCertOptions(service: Connex1.Vendor.CertSigningService, options: Connex.Signer.CertOptions): void {
+    options.signer && service.signer(options.signer)
+    options.link && service.link(options.link)
+    options.onAccepted && options.onAccepted()
+}
+
 export const createSync: NewSignerFunc = async (genesisId: string) => { 
     const v1 = (window as Required<globalThis.Window>).connex.vendor
     return Promise.resolve({
         signTx: (msg: Connex.Vendor.TxMessage, options: Connex.Signer.TxOptions): Promise<Connex.Vendor.TxResponse> => {
             const s1 = v1.sign('tx')
-            options.signer && s1.signer(options.signer)
-            options.gas && s1.gas(options.gas)
-            options.dependsOn && s1.dependsOn(options.dependsOn)
-            options.link && s1.link(options.link)
-            options.comment && s1.link(options.comment)
-            if (options.delegator) {
-                const url = options.delegator.url
-                s1.delegate(async (unsignedTx) => {
-                    const res = await fetch(url, {
-                        method: 'POST',
-                        body: JSON.stringify(unsignedTx),
-                        headers: {
-                            "Content-Type": 'application/json'
-                        }
-                    })
-
-                    return res.json()
-                })
-            }
-            options.onAccepted && options.onAccepted()
-
+            applyTxOptions(s1, options)
             return s1.request(msg)
         },
-        signCert: (msg: Connex.Vendor.CertMessage, options: Connex.Signer.CertOptions): Promise<Connex.Vendor.CertResponse> => { 
+        signCert: (msg: Connex.Vendor.CertMessage, options: Connex.Signer.CertOptions): Promise<Connex.Vendor.CertResponse> => {
             const s1 = v1.sign('cert')
-            options.signer && s1.signer(options.signer)
-            options.link && s1.link(options.link)
-            options.onAccepted && options.onAccepted()
-
+            applyCertOptions(s1, options)
             return s1.request(msg)
         }
     })
