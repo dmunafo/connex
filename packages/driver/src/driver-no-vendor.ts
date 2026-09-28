@@ -66,19 +66,13 @@ export class DriverNoVendor implements Connex.Driver {
             this.httpGet(`accounts/${addr}/storage/${key}`, { revision }))
     }
     public explain(arg: Connex.Driver.ExplainArg, revision: string, cacheHints?: string[]): Promise<Connex.VM.Output[]> {
-        const cacheKey = `explain-${blake2b256(JSON.stringify(arg)).toString('hex')}`
-        return this.cache.getTied(cacheKey, revision, () =>
-            this.httpPost('accounts/*', arg, { revision }), cacheHints)
+        return this.tiedPost('explain', 'accounts/*', arg, revision, { revision }, cacheHints)
     }
     public filterEventLogs(arg: Connex.Driver.FilterEventLogsArg, cacheHints?: string[]): Promise<Connex.Thor.Filter.Row<'event'>[]> {
-        const cacheKey = `event-${blake2b256(JSON.stringify(arg)).toString('hex')}`
-        return this.cache.getTied(cacheKey, this.head.id, () =>
-            this.httpPost('logs/event', arg), cacheHints)
+        return this.tiedPost('event', 'logs/event', arg, this.head.id, undefined, cacheHints)
     }
     public filterTransferLogs(arg: Connex.Driver.FilterTransferLogsArg, cacheHints?: string[]): Promise<Connex.Thor.Filter.Row<'transfer'>[]> {
-        const cacheKey = `transfer-${blake2b256(JSON.stringify(arg)).toString('hex')}`
-        return this.cache.getTied(cacheKey, this.head.id, () =>
-            this.httpPost('logs/transfer', arg), cacheHints)
+        return this.tiedPost('transfer', 'logs/transfer', arg, this.head.id, undefined, cacheHints)
     }
     public signTx(
         msg: Connex.Vendor.TxMessage,
@@ -132,6 +126,18 @@ export class DriverNoVendor implements Connex.Driver {
             path,
             query || '',
             body || '')
+    }
+
+    private tiedPost<T>(
+        prefix: string,
+        path: string,
+        body: object,
+        revision: string,
+        query: Record<string, string> | undefined,
+        cacheHints?: string[]
+    ): Promise<T> {
+        const cacheKey = `${prefix}-${blake2b256(JSON.stringify(body)).toString('hex')}`
+        return this.cache.getTied(cacheKey, revision, () => this.httpPost(path, body, query), cacheHints)
     }
 
     private get headerValidator() {
