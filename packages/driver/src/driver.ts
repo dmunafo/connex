@@ -1,6 +1,7 @@
 
 import { DriverNoVendor } from './driver-no-vendor'
 import { Net, Wallet } from './interfaces'
+import { toHead } from './common'
 import { Transaction, Certificate, blake2b256 } from 'thor-devkit'
 import { randomBytes } from 'crypto'
 
@@ -23,18 +24,7 @@ export class Driver extends DriverNoVendor {
             }
         })
 
-        return new Driver(
-            net,
-            genesis,
-            {
-                id: best.id,
-                number: best.number,
-                timestamp: best.timestamp,
-                parentID: best.parentID,
-                txsFeatures: best.txsFeatures,
-                gasLimit: best.gasLimit
-            },
-            wallet)
+        return new Driver(net, genesis, toHead(best), wallet)
     }
 
     /** handler to receive txs committed */

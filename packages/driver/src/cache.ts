@@ -92,62 +92,30 @@ export class Cache {
         return block
     }
 
-    public async getTx(
+    public getTx(
         txid: string,
         fetch: () => Promise<Connex.Thor.Transaction | null>
     ): Promise<Connex.Thor.Transaction | null> {
-        let tx = this.irreversible.txs.get(txid) || null
-        if (tx) {
-            return tx
-        }
-
-        for (const slot of this.window) {
-            tx = slot.txs.get(txid) || null
-            if (tx) {
-                return tx
-            }
-        }
-
-        tx = await fetch()
-        if (tx && tx.meta) { // only cache non-pending tx
-            const { slot } = this.findSlot(tx.meta.blockID)
-            if (slot) {
-                slot.txs.set(txid, tx)
-            }
-            if (this.isIrreversible(tx.meta.blockNumber)) {
-                this.irreversible.txs.set(txid, tx)
-            }
-        }
-        return tx
+        return this.readCommitted(
+            txid,
+            this.irreversible.txs,
+            slot => slot.txs,
+            fetch,
+            tx => tx.meta
+        )
     }
 
-    public async getReceipt(
+    public getReceipt(
         txid: string,
         fetch: () => Promise<Connex.Thor.Transaction.Receipt | null>
     ): Promise<Connex.Thor.Transaction.Receipt | null> {
-        let receipt = this.irreversible.receipts.get(txid) || null
-        if (receipt) {
-            return receipt
-        }
-
-        for (const slot of this.window) {
-            receipt = slot.receipts.get(txid) || null
-            if (receipt) {
-                return receipt
-            }
-        }
-
-        receipt = await fetch()
-        if (receipt) {
-            const { slot } = this.findSlot(receipt.meta.blockID)
-            if (slot) {
-                slot.receipts.set(txid, receipt)
-            }
-            if (this.isIrreversible(receipt.meta.blockNumber)) {
-                this.irreversible.receipts.set(txid, receipt)
-            }
-        }
-        return receipt
+        return this.readCommitted(
+            txid,
+            this.irreversible.receipts,
+            slot => slot.receipts,
+            fetch,
+            receipt => receipt.meta
+        )
     }
 
     public async getAccount(
@@ -155,21 +123,14 @@ export class Cache {
         revision: string,
         fetch: () => Promise<Connex.Thor.Account>
     ): Promise<Connex.Thor.Account> {
-        const found = this.findSlot(revision)
-        for (let i = found.index; i >= 0; i--) {
-            const slot = this.window[i]
-            const acc = slot.accounts.get(addr)
-            if (acc) {
-                if (i !== found.index) {
-                    found.slot!.accounts.set(addr, acc)
-                }
-                return acc.snapshot(found.slot!.timestamp)
-            }
-
-            if (!slot.bloom || testBytesHex(slot.bloom, addr)) {
-                // account might be dirty
-                break
-            }
+        const found = this.readRevision(
+            revision,
+            slot => slot.accounts,
+            addr,
+            slot => !slot.bloom || testBytesHex(slot.bloom, addr)
+        )
+        if (found.hit && found.slot) {
+            return found.hit.snapshot(found.slot.timestamp)
         }
         const accObj = await fetch()
         if (found.slot) {
@@ -186,32 +147,21 @@ export class Cache {
      * @param hints array of tied addresses, as the gist to invalidate cache key. undefined means the key is always
      * invalidated on different revision.
      */
-    public async getTied(
+    public async getTied<T>(
         key: string,
         revision: string,
-        fetch: () => Promise<any>,
+        fetch: () => Promise<T>,
         hints?: string[]
-    ): Promise<any> {
-        const found = this.findSlot(revision)
-        for (let i = found.index; i >= 0; i--) {
-            const slot = this.window[i]
-            const v = slot.tied.get(key)
-            if (v) {
-                if (i !== found.index) {
-                    found.slot!.tied.set(key, v)
-                }
-                return v
-            }
-
-            if (!slot.bloom || !hints) {
-                break
-            }
-
-            // if hints.length === 0, never invalidate cache
-            if (hints.some(t => testBytesHex(slot.bloom!, t))) {
-                // might be dirty
-                break
-            }
+    ): Promise<T> {
+        const found = this.readRevision(
+            revision,
+            slot => slot.tied,
+            key,
+            // undefined hints invalidate on every new revision; an empty list never does
+            slot => !slot.bloom || !hints || hints.some(item => testBytesHex(slot.bloom!, item))
+        )
+        if (found.hit !== undefined) {
+            return found.hit
         }
         const value = await fetch()
         if (found.slot) {
@@ -220,7 +170,74 @@ export class Cache {
         return value
     }
 
-    private findSlot(revision: string | number) {
+    /**
+     * Irreversible LRU, then the recent window, then fetch.
+     * A value is stored only when metaOf returns the block it belongs to.
+     * Pending transactions have no meta and stay uncached.
+     */
+    private async readCommitted<T>(
+        id: string,
+        frozen: { get(key: string): T | undefined, set(key: string, value: T): void },
+        slotValues: (slot: Slot) => Map<string, T>,
+        fetch: () => Promise<T | null>,
+        metaOf: (value: T) => { blockID: string, blockNumber: number } | null
+    ): Promise<T | null> {
+        const frozenHit = frozen.get(id) || null
+        if (frozenHit) {
+            return frozenHit
+        }
+
+        for (const slot of this.window) {
+            const hit = slotValues(slot).get(id) || null
+            if (hit) {
+                return hit
+            }
+        }
+
+        const value = await fetch()
+        const meta = value && metaOf(value)
+        if (value && meta) {
+            const { slot } = this.findSlot(meta.blockID)
+            if (slot) {
+                slotValues(slot).set(id, value)
+            }
+            if (this.isIrreversible(meta.blockNumber)) {
+                frozen.set(id, value)
+            }
+        }
+        return value
+    }
+
+    /**
+     * Walk the window backward from revision. A hit is copied onto the requested
+     * slot. dirty() stops the walk: a bloom hit means the key may have changed.
+     */
+    private readRevision<T>(
+        revision: string,
+        values: (slot: Slot) => Map<string, T>,
+        key: string,
+        dirty: (slot: Slot) => boolean
+    ): { slot?: Slot, hit?: T } {
+        const found = this.findSlot(revision)
+        if (found.slot) {
+            for (let i = found.index; i >= 0; i--) {
+                const slot = this.window[i]
+                const hit = values(slot).get(key)
+                if (hit) {
+                    if (i !== found.index) {
+                        values(found.slot).set(key, hit)
+                    }
+                    return { slot: found.slot, hit }
+                }
+                if (dirty(slot)) {
+                    break
+                }
+            }
+        }
+        return { slot: found.slot }
+    }
+
+    private findSlot(revision: string | number): { slot?: Slot, index: number } {
         const index = this.window.findIndex(s => s.id === revision || s.number === revision)
         if (index >= 0) {
             return { slot: this.window[index], index }

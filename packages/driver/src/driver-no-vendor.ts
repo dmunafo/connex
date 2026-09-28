@@ -2,7 +2,7 @@ import { Net } from './interfaces'
 import { PromInt, InterruptedError } from './promint'
 import { Cache } from './cache'
 import { blake2b256 } from 'thor-devkit'
-import { sleep } from './common'
+import { sleep, toHead } from './common'
 
 /** class implements Connex.Driver leaves out Vendor related methods */
 export class DriverNoVendor implements Connex.Driver {
@@ -19,18 +19,7 @@ export class DriverNoVendor implements Connex.Driver {
         readonly genesis: Connex.Thor.Block,
         initialHead?: Connex.Thor.Status['head']
     ) {
-        if (initialHead) {
-            this.head = initialHead
-        } else {
-            this.head = {
-                id: genesis.id,
-                number: genesis.number,
-                timestamp: genesis.timestamp,
-                parentID: genesis.parentID,
-                txsFeatures: genesis.txsFeatures,
-                gasLimit: genesis.gasLimit
-            }
-        }
+        this.head = initialHead ?? toHead(genesis)
         void this.headTrackerLoop()
     }
 
@@ -77,19 +66,13 @@ export class DriverNoVendor implements Connex.Driver {
             this.httpGet(`accounts/${addr}/storage/${key}`, { revision }))
     }
     public explain(arg: Connex.Driver.ExplainArg, revision: string, cacheHints?: string[]): Promise<Connex.VM.Output[]> {
-        const cacheKey = `explain-${blake2b256(JSON.stringify(arg)).toString('hex')}`
-        return this.cache.getTied(cacheKey, revision, () =>
-            this.httpPost('accounts/*', arg, { revision }), cacheHints)
+        return this.tiedPost('explain', 'accounts/*', arg, revision, { revision }, cacheHints)
     }
     public filterEventLogs(arg: Connex.Driver.FilterEventLogsArg, cacheHints?: string[]): Promise<Connex.Thor.Filter.Row<'event'>[]> {
-        const cacheKey = `event-${blake2b256(JSON.stringify(arg)).toString('hex')}`
-        return this.cache.getTied(cacheKey, this.head.id, () =>
-            this.httpPost('logs/event', arg), cacheHints)
+        return this.tiedPost('event', 'logs/event', arg, this.head.id, undefined, cacheHints)
     }
     public filterTransferLogs(arg: Connex.Driver.FilterTransferLogsArg, cacheHints?: string[]): Promise<Connex.Thor.Filter.Row<'transfer'>[]> {
-        const cacheKey = `transfer-${blake2b256(JSON.stringify(arg)).toString('hex')}`
-        return this.cache.getTied(cacheKey, this.head.id, () =>
-            this.httpPost('logs/transfer', arg), cacheHints)
+        return this.tiedPost('transfer', 'logs/transfer', arg, this.head.id, undefined, cacheHints)
     }
     public signTx(
         msg: Connex.Vendor.TxMessage,
@@ -145,6 +128,18 @@ export class DriverNoVendor implements Connex.Driver {
             body || '')
     }
 
+    private tiedPost<T>(
+        prefix: string,
+        path: string,
+        body: object,
+        revision: string,
+        query: Record<string, string> | undefined,
+        cacheHints?: string[]
+    ): Promise<T> {
+        const cacheKey = `${prefix}-${blake2b256(JSON.stringify(body)).toString('hex')}`
+        return this.cache.getTied(cacheKey, revision, () => this.httpPost(path, body, query), cacheHints)
+    }
+
     private get headerValidator() {
         return (headers: Record<string, string>) => {
             const xgid = headers['x-genesis-id']
@@ -166,14 +161,7 @@ export class DriverNoVendor implements Connex.Driver {
             try {
                 const best = await this.int.wrap<Connex.Thor.Block>(this.httpGet('blocks/best'))
                 if (best.id !== this.head.id && best.number >= this.head.number) {
-                    this.head = {
-                        id: best.id,
-                        number: best.number,
-                        timestamp: best.timestamp,
-                        parentID: best.parentID,
-                        txsFeatures: best.txsFeatures,
-                        gasLimit: best.gasLimit
-                    }
+                    this.head = toHead(best)
                     this.cache.handleNewBlock(this.head, undefined, best)
                     this.emitNewHead()
 
@@ -216,14 +204,7 @@ export class DriverNoVendor implements Connex.Driver {
                 const data = await this.int.wrap(wsr.read())
                 const beat: Beat2 = JSON.parse(data)
                 if (!beat.obsolete && beat.id !== this.head.id && beat.number >= this.head.number) {
-                    this.head = {
-                        id: beat.id,
-                        number: beat.number,
-                        timestamp: beat.timestamp,
-                        parentID: beat.parentID,
-                        txsFeatures: beat.txsFeatures,
-                        gasLimit: beat.gasLimit
-                    }
+                    this.head = toHead(beat)
                     this.cache.handleNewBlock(this.head, { k: beat.k, bits: beat.bloom })
                     this.emitNewHead()
                 }
